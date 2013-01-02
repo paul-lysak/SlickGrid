@@ -52,7 +52,7 @@ if (typeof Slick === "undefined") {
    * @param {Array}             columns     An array of column definitions.
    * @param {Object}            options     Grid options.
    **/
-  function SlickGrid(container, data, columns, options) {
+  function SlickGrid(container, data, columnsHierarchy, options) {
     // settings
     var defaults = {
       explicitInitialization: false,
@@ -161,6 +161,7 @@ if (typeof Slick === "undefined") {
     var sortColumns = [];
     var columnPosLeft = [];
     var columnPosRight = [];
+    var columns = [];
 
 
     // async call handles
@@ -194,16 +195,29 @@ if (typeof Slick === "undefined") {
       columnDefaults.width = options.defaultColumnWidth;
 
       columnsById = {};
-      for (var i = 0; i < columns.length; i++) {
-        var m = columns[i] = $.extend({}, columnDefaults, columns[i]);
-        columnsById[m.id] = i;
-        if (m.minWidth && m.width < m.minWidth) {
-          m.width = m.minWidth;
+      function prepareColumns(colArray, colHierarchy) {
+        var groupWidth = 0;
+        for (var i = 0; i < colHierarchy.length; i++) {
+          if(colHierarchy[i].type == "group") {
+            var group = prepareColumns(colArray, colHierarchy[i].columns);
+            colHierarchy[i].width = group.width;
+            continue;
+          }
+          var m = $.extend({}, columnDefaults, colHierarchy[i]);
+          if (m.minWidth && m.width < m.minWidth) {
+            m.width = m.minWidth;
+          }
+          if (m.maxWidth && m.width > m.maxWidth) {
+            m.width = m.maxWidth;
+          }
+          columnsById[m.id] = colArray.length;
+          colArray.push(m);
+          colHierarchy[i] = m;
+          groupWidth += m.width;
         }
-        if (m.maxWidth && m.width > m.maxWidth) {
-          m.width = m.maxWidth;
-        }
-      }
+        return {width: groupWidth};
+     }
+     prepareColumns(columns, columnsHierarchy);
 
       // validate loaded JavaScript modules against requested options
       if (options.enableColumnReorder && !$.fn.sortable) {
@@ -541,42 +555,52 @@ if (typeof Slick === "undefined") {
           }
         });
       $headerRow.empty();
-
-      for (var i = 0; i < columns.length; i++) {
-        var m = columns[i];
-
-        var header = $("<div class='ui-state-default slick-header-column' id='" + uid + m.id + "' />")
-            .html("<span class='slick-column-name'>" + m.name + "</span>")
-            .width(m.width - headerColumnWidthDiff)
-            .attr("title", m.toolTip || "")
-            .data("column", m)
-            .addClass(m.headerCssClass || "")
-            .appendTo($headers);
-
-        if (options.enableColumnReorder || m.sortable) {
-          header.hover(hoverBegin, hoverEnd);
-        }
-
-        if (m.sortable) {
-          header.append("<span class='slick-sort-indicator' />");
-        }
-
-        trigger(self.onHeaderCellRendered, {
-          "node": header[0],
-          "column": m
-        });
-
-        if (options.showHeaderRow) {
-          var headerRowCell = $("<div class='ui-state-default slick-headerrow-column l" + i + " r" + i + "'></div>")
+      function appendColumns($container, colHierarchy, startIndex) {
+         for (var i = 0; i < colHierarchy.length; i++) {
+          var m = colHierarchy[i];
+          var colIndex = i+startIndex;
+          if(m.type == "group") {
+              var $groupContainer = $("<div class='slick-header-group'/>").width(m.width).html("<span class='slick-column-name'>"+m.name+"</span>").appendTo($container);
+              appendColumns($groupContainer, m.columns, colIndex);
+              console.log("group", m);
+              continue;
+          }
+          var header = $("<div class='ui-state-default slick-header-column' id='" + uid + m.id + "' />")
+              .html("<span class='slick-column-name'>" + m.name + "</span>")
+              .width(m.width - headerColumnWidthDiff)
+              .attr("title", m.toolTip || "")
               .data("column", m)
-              .appendTo($headerRow);
+              .addClass(m.headerCssClass || "")
+              .appendTo($container);
 
-          trigger(self.onHeaderRowCellRendered, {
-            "node": headerRowCell[0],
+          if (options.enableColumnReorder || m.sortable) {
+            header.hover(hoverBegin, hoverEnd);
+          }
+
+          if (m.sortable) {
+            header.append("<span class='slick-sort-indicator' />");
+          }
+
+          trigger(self.onHeaderCellRendered, {
+            "node": header[0],
             "column": m
           });
+
+          if (options.showHeaderRow) {
+            var headerRowCell = $("<div class='ui-state-default slick-headerrow-column l" + colIndex + " r" + colIndex + "'></div>")
+                .data("column", m)
+                .appendTo($headerRow);
+
+            trigger(self.onHeaderRowCellRendered, {
+              "node": headerRowCell[0],
+              "column": m
+            });
+          }
         }
       }
+
+      appendColumns($headers, columnsHierarchy, 0);
+      //appendColumns($headers, columns, 0);
 
       setSortColumns(sortColumns);
       setupColumnResize();
@@ -689,7 +713,9 @@ if (typeof Slick === "undefined") {
 
     function setupColumnResize() {
       var $col, j, c, pageX, columnElements, minPageX, maxPageX, firstResizable, lastResizable;
-      columnElements = $headers.children();
+      //columnElements = $headers.children();
+      //TODO fix resizing for herarchical groups
+      columnElements = $headers.find(".slick-header-column");
       columnElements.find(".slick-resizable-handle").remove();
       columnElements.each(function (i, e) {
         if (columns[i].resizable) {
@@ -899,6 +925,8 @@ if (typeof Slick === "undefined") {
       var rowHeight = (options.rowHeight - cellHeightDiff);
       var rules = [
         "." + uid + " .slick-header-column { left: 1000px; }",
+        "." + uid + " .slick-header-group { left: 1000px; }",
+        "." + uid + " .slick-header-group .slick-header-column { left: 0px; }",
         "." + uid + " .slick-top-panel { height:" + options.topPanelHeight + "px; }",
         "." + uid + " .slick-headerrow-columns { height:" + options.headerRowHeight + "px; }",
         "." + uid + " .slick-cell { height:" + rowHeight + "px; }",
