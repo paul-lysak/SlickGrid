@@ -556,13 +556,18 @@ if (typeof Slick === "undefined") {
         });
       $headerRow.empty();
       function appendColumns($container, colHierarchy, startIndex) {
+         var maxDepth = 1;
          for (var i = 0; i < colHierarchy.length; i++) {
           var m = colHierarchy[i];
           var colIndex = i+startIndex;
           if(m.type == "group") {
-              var $groupContainer = $("<div class='slick-header-group'/>").width(m.width).html("<span class='slick-column-name'>"+m.name+"</span>").appendTo($container);
-              appendColumns($groupContainer, m.columns, colIndex);
-              console.log("group", m);
+              var $groupContainer = $("<div class='slick-header-group'/>").width(m.width).html("<div class='slick-header-group-column'><span class='slick-column-name'>"+m.name+"</span></div>").appendTo($container);
+              var containerDepth = appendColumns($groupContainer, m.columns, colIndex).depth + 1;
+              if(containerDepth > maxDepth) {
+                maxDepth = containerDepth + 1;
+              }
+              $groupContainer.height(16 * containerDepth); //TODO move out base height
+//              console.log("group", m);
               continue;
           }
           var header = $("<div class='ui-state-default slick-header-column' id='" + uid + m.id + "' />")
@@ -597,9 +602,11 @@ if (typeof Slick === "undefined") {
             });
           }
         }
+        return {depth: maxDepth}
       }
 
-      appendColumns($headers, columnsHierarchy, 0);
+      var depth = appendColumns($headers, columnsHierarchy, 0).depth;
+      $headers.height(16 * depth); //TODO move out base height
       //appendColumns($headers, columns, 0);
 
       setSortColumns(sortColumns);
